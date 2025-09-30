@@ -11,10 +11,17 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
-import { Database, Home, FolderOpen, HelpCircle } from "lucide-react"
+import { Database, Home, FolderOpen, HelpCircle, Plus } from "lucide-react"
 
 export function Header() {
   const [helpOpen, setHelpOpen] = useState(false)
+
+  const handleNewProject = () => {
+    // Clear all session storage data
+    sessionStorage.clear()
+    // Redirect to home page
+    window.location.href = "/"
+  }
 
   return (
     <header className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -44,6 +51,11 @@ export function Header() {
         </nav>
 
         <div className="flex items-center space-x-2">
+          <Button variant="default" size="sm" onClick={handleNewProject} className="flex items-center space-x-2">
+            <Plus className="h-4 w-4" />
+            <span>Новый проект</span>
+          </Button>
+
           <Dialog open={helpOpen} onOpenChange={setHelpOpen}>
             <DialogTrigger asChild>
               <Button variant="outline" size="sm" className="flex items-center space-x-2 bg-transparent">

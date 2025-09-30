@@ -21,6 +21,7 @@ import {
   CheckCircle,
   Clock,
   AlertCircle,
+  Info,
 } from "lucide-react"
 import {
   DropdownMenu,
@@ -231,9 +232,17 @@ export default function ProjectsPage() {
     <div className="container mx-auto px-4 py-6 space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">Проекты</h1>
-          <p className="text-muted-foreground">Управление пайплайнами обработки данных</p>
+        <div className="flex items-center gap-3">
+          <div>
+            <div className="flex items-center gap-2">
+              <h1 className="text-3xl font-bold">Проекты</h1>
+              <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-300">
+                <Info className="w-3 h-3 mr-1" />
+                демо режим
+              </Badge>
+            </div>
+            <p className="text-muted-foreground">Управление пайплайнами обработки данных</p>
+          </div>
         </div>
         <Link href="/">
           <Button>
