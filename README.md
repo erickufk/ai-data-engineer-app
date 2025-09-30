@@ -1,6 +1,7 @@
 # 🤖 AI Data Engineer App
 
 [![Deployed on Vercel](https://img.shields.io/badge/Deployed%20on-Vercel-black?style=for-the-badge&logo=vercel)](https://aidataengineer.vercel.app/)
+
 Access the app https://aidataengineer.vercel.app 
 
 **Автоматическая генерация пайплайнов обработки данных с помощью искусственного интеллекта**
