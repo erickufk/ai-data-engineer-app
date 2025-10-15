@@ -96,6 +96,7 @@ export function ScheduleConfig({
     }
 
     if (
+      (loadMode === "merge" || loadMode === "upsert") &&
       localLoadPolicy.conflictStrategy === "last-wins" &&
       !localLoadPolicy.timestampField &&
       !localLoadPolicy.versionField
@@ -103,22 +104,18 @@ export function ScheduleConfig({
       errors.push("Для политики last-wins укажите поле времени или версию.")
     }
 
-    if (targetPreset?.id === "clickhouse" && (!localLoadPolicy.orderBy || localLoadPolicy.orderBy.length === 0)) {
-      errors.push("Для ClickHouse требуется определить ORDER BY.")
-    }
-
-    if (localLoadPolicy.partitioning?.type === "by_date" && !timeField) {
+    if (localLoadPolicy.partitioning?.type === "by_date" && !timeField && !localLoadPolicy.timestampField) {
       errors.push(
         "Партиционирование по дате невозможно: отсутствует timeField. Измените стратегию или укажите поле времени.",
       )
     }
 
-    if (localLoadPolicy.watermark && !timeField) {
-      errors.push("Watermark доступен только если есть timeField.")
+    if (localLoadPolicy.watermark?.field && !timeField && !localLoadPolicy.timestampField) {
+      errors.push("Watermark требует указания поля времени.")
     }
 
     setValidationErrors(errors)
-  }, [loadMode, localLoadPolicy, targetPreset, timeField])
+  }, [loadMode, localLoadPolicy, timeField])
 
   const handleLoadModeChange = (newMode: string) => {
     onLoadModeChange(newMode)
@@ -230,7 +227,16 @@ export function ScheduleConfig({
           </Alert>
         )}
 
-        {/* Success Indicator */}
+        {validationErrors.length === 0 && loadMode === "append" && (
+          <Alert className="border-green-500 bg-green-50 dark:bg-green-950/20">
+            <CheckCircle2 className="h-4 w-4 text-green-600" />
+            <AlertDescription className="text-green-800 dark:text-green-200">
+              Режим append настроен корректно. Данные будут добавляться без проверки дубликатов.
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {/* Success Indicator for merge/upsert */}
         {validationErrors.length === 0 &&
           showAdvancedConfig &&
           localLoadPolicy.dedupKeys &&
@@ -541,7 +547,7 @@ export function ScheduleConfig({
                               <TooltipContent className="max-w-xs">
                                 <p className="text-xs">
                                   Поле с временной меткой (timestamp), по которому определяется, какая запись новее.
-                                  Обычно это created_at, updated_at или event_time.
+                                  Обычно это created_at, updated_at, event_time или любое поле с датой/временем.
                                 </p>
                               </TooltipContent>
                             </Tooltip>
@@ -554,21 +560,52 @@ export function ScheduleConfig({
                               <SelectValue placeholder="Выберите поле времени" />
                             </SelectTrigger>
                             <SelectContent>
-                              {targetFields
-                                .filter(
-                                  (field) =>
-                                    field.toLowerCase().includes("time") ||
-                                    field.toLowerCase().includes("date") ||
-                                    field.toLowerCase().includes("created") ||
-                                    field.toLowerCase().includes("updated"),
-                                )
-                                .map((field) => (
-                                  <SelectItem key={field} value={field}>
-                                    {field}
-                                  </SelectItem>
-                                ))}
+                              {targetFields.length === 0 ? (
+                                <div className="p-2 text-xs text-muted-foreground">
+                                  Нет доступных полей. Настройте маппинг на шаге 3.
+                                </div>
+                              ) : (
+                                <>
+                                  {targetFields
+                                    .filter(
+                                      (field) =>
+                                        field.toLowerCase().includes("time") ||
+                                        field.toLowerCase().includes("date") ||
+                                        field.toLowerCase().includes("created") ||
+                                        field.toLowerCase().includes("updated") ||
+                                        field.toLowerCase().includes("timestamp"),
+                                    )
+                                    .map((field) => (
+                                      <SelectItem key={field} value={field}>
+                                        <div className="flex items-center space-x-2">
+                                          <span>{field}</span>
+                                          <Badge variant="secondary" className="text-xs">
+                                            Рекомендуется
+                                          </Badge>
+                                        </div>
+                                      </SelectItem>
+                                    ))}
+                                  {targetFields
+                                    .filter(
+                                      (field) =>
+                                        !field.toLowerCase().includes("time") &&
+                                        !field.toLowerCase().includes("date") &&
+                                        !field.toLowerCase().includes("created") &&
+                                        !field.toLowerCase().includes("updated") &&
+                                        !field.toLowerCase().includes("timestamp"),
+                                    )
+                                    .map((field) => (
+                                      <SelectItem key={field} value={field}>
+                                        {field}
+                                      </SelectItem>
+                                    ))}
+                                </>
+                              )}
                             </SelectContent>
                           </Select>
+                          <p className="text-xs text-muted-foreground">
+                            💡 Выберите поле с датой/временем. Если не видите нужное поле, проверьте маппинг на шаге 3.
+                          </p>
                         </div>
                         <div className="space-y-2">
                           <Label>Порядок</Label>
@@ -593,7 +630,16 @@ export function ScheduleConfig({
                   <div className="space-y-2">
                     <Label className="flex items-center space-x-2">
                       <span>Watermark (опционально)</span>
-                      <HelpCircle className="w-3 h-3 text-muted-foreground" />
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <HelpCircle className="w-3 h-3 text-muted-foreground cursor-help" />
+                        </TooltipTrigger>
+                        <TooltipContent className="max-w-xs">
+                          <p className="text-xs">
+                            Watermark позволяет обрабатывать поздно прибывающие данные. Укажите поле времени и задержку.
+                          </p>
+                        </TooltipContent>
+                      </Tooltip>
                     </Label>
                     <div className="grid grid-cols-2 gap-2">
                       <Select
@@ -603,21 +649,47 @@ export function ScheduleConfig({
                             watermark: field ? { field, delay: localLoadPolicy.watermark?.delay || "PT1H" } : undefined,
                           })
                         }
-                        disabled={!timeField}
                       >
                         <SelectTrigger>
                           <SelectValue placeholder="Поле времени" />
                         </SelectTrigger>
                         <SelectContent>
-                          {targetFields
-                            .filter(
-                              (field) => field.toLowerCase().includes("time") || field.toLowerCase().includes("date"),
-                            )
-                            .map((field) => (
-                              <SelectItem key={field} value={field}>
-                                {field}
-                              </SelectItem>
-                            ))}
+                          {targetFields.length === 0 ? (
+                            <div className="p-2 text-xs text-muted-foreground">Нет доступных полей</div>
+                          ) : (
+                            <>
+                              {/* Show recommended fields first */}
+                              {targetFields
+                                .filter(
+                                  (field) =>
+                                    field.toLowerCase().includes("time") ||
+                                    field.toLowerCase().includes("date") ||
+                                    field.toLowerCase().includes("timestamp"),
+                                )
+                                .map((field) => (
+                                  <SelectItem key={field} value={field}>
+                                    <div className="flex items-center space-x-2">
+                                      <span>{field}</span>
+                                      <Badge variant="secondary" className="text-xs">
+                                        Рекомендуется
+                                      </Badge>
+                                    </div>
+                                  </SelectItem>
+                                ))}
+                              {targetFields
+                                .filter(
+                                  (field) =>
+                                    !field.toLowerCase().includes("time") &&
+                                    !field.toLowerCase().includes("date") &&
+                                    !field.toLowerCase().includes("timestamp"),
+                                )
+                                .map((field) => (
+                                  <SelectItem key={field} value={field}>
+                                    {field}
+                                  </SelectItem>
+                                ))}
+                            </>
+                          )}
                         </SelectContent>
                       </Select>
                       <Select

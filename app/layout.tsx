@@ -21,6 +21,24 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`font-sans ${GeistSans.variable} ${GeistMono.variable}`}>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              // Suppress unhandled promise rejections from browser extensions (e.g., MetaMask)
+              window.addEventListener('unhandledrejection', function(event) {
+                // Check if error is from MetaMask or other external sources
+                if (event.reason && (
+                  event.reason.message?.includes('MetaMask') ||
+                  event.reason.message?.includes('ethereum') ||
+                  event.reason.message?.includes('web3')
+                )) {
+                  console.log('[App] Suppressed external error:', event.reason.message);
+                  event.preventDefault();
+                }
+              });
+            `,
+          }}
+        />
         <Suspense fallback={<div>Loading...</div>}>
           <Header />
         </Suspense>

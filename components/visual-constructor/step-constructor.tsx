@@ -164,13 +164,12 @@ export function StepConstructor({ onComplete }: StepConstructorProps) {
           return false
         }
 
-        // Check for last-wins timestamp requirement
-        if (loadPolicy.conflictStrategy === "last-wins" && !loadPolicy.timestampField && !loadPolicy.versionField) {
-          return false
-        }
-
-        // Check for ClickHouse ORDER BY requirement
-        if (selectedTargetPreset?.id === "clickhouse" && (!loadPolicy.orderBy || loadPolicy.orderBy.length === 0)) {
+        if (
+          (loadMode === "merge" || loadMode === "upsert") &&
+          loadPolicy.conflictStrategy === "last-wins" &&
+          !loadPolicy.timestampField &&
+          !loadPolicy.versionField
+        ) {
           return false
         }
 
@@ -618,22 +617,14 @@ export function StepConstructor({ onComplete }: StepConstructorProps) {
               </Badge>
             )}
 
-          {loadPolicy.conflictStrategy === "last-wins" &&
+          {(loadMode === "merge" || loadMode === "upsert") &&
+            loadPolicy.conflictStrategy === "last-wins" &&
             currentStep === "schedule" &&
             !loadPolicy.timestampField &&
             !loadPolicy.versionField && (
               <Badge variant="destructive" className="text-xs flex items-center space-x-1">
                 <AlertCircle className="w-3 h-3" />
                 <span>Требуется поле времени</span>
-              </Badge>
-            )}
-
-          {selectedTargetPreset?.id === "clickhouse" &&
-            currentStep === "schedule" &&
-            (!loadPolicy.orderBy || loadPolicy.orderBy.length === 0) && (
-              <Badge variant="destructive" className="text-xs flex items-center space-x-1">
-                <AlertCircle className="w-3 h-3" />
-                <span>Требуется ORDER BY</span>
               </Badge>
             )}
 
@@ -649,10 +640,10 @@ export function StepConstructor({ onComplete }: StepConstructorProps) {
           <AlertDialogHeader>
             <AlertDialogTitle>Завершение создания пайплайна</AlertDialogTitle>
             <AlertDialogDescription className="space-y-2">
-              <p>Сохраните созданные артефакты локально.</p>
-              <p className="text-sm text-muted-foreground">
+              <div>Сохраните созданные артефакты локально.</div>
+              <div className="text-sm text-muted-foreground">
                 После завершения вы сможете скачать все сгенерированные файлы конфигурации.
-              </p>
+              </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
