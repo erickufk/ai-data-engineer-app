@@ -8,6 +8,7 @@ const MAX_PROFILE_BYTES = 10 * 1024 * 1024 // 10MB
 const CSV_MAX_ROWS = 1000
 const JSON_MAX_OBJS = 1000
 const XML_MAX_RECORDS = 500
+const FILE_SAMPLE_PERCENT = 0.1 // Read only first 10% of file for analysis
 
 export async function POST(request: NextRequest) {
   try {
@@ -58,7 +59,15 @@ export async function POST(request: NextRequest) {
 
     try {
       const buffer = await file.arrayBuffer()
-      const uint8Array = new Uint8Array(buffer)
+      const fullSize = buffer.byteLength
+      const sampleSize = Math.min(fullSize, Math.ceil(fullSize * FILE_SAMPLE_PERCENT))
+
+      console.log(
+        `[v0] File size: ${fullSize} bytes, sampling: ${sampleSize} bytes (${((sampleSize / fullSize) * 100).toFixed(1)}%)`,
+      )
+
+      // Only process the first 10% of the file
+      const uint8Array = new Uint8Array(buffer, 0, sampleSize)
 
       if (uint8Array.length >= 3 && uint8Array[0] === 0xef && uint8Array[1] === 0xbb && uint8Array[2] === 0xbf) {
         detectedEncoding = "utf-8-bom"
@@ -79,7 +88,10 @@ export async function POST(request: NextRequest) {
         }
       }
     } catch (error) {
-      text = await file.text()
+      const fullText = await file.text()
+      const sampleLength = Math.ceil(fullText.length * FILE_SAMPLE_PERCENT)
+      text = fullText.substring(0, sampleLength)
+      console.log(`[v0] Fallback text reading: ${fullText.length} chars, sampling: ${sampleLength} chars`)
     }
 
     let fileProfile
