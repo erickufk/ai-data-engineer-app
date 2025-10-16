@@ -132,8 +132,20 @@ export function FilePreviewAnalysis({ onAnalysisComplete, onBack }: FilePreviewA
         })
       }, 200)
 
+      const maxUploadSize = Math.ceil(file.size * 0.1) // 10% of file size
+      const fileSlice = file.slice(0, maxUploadSize)
+
+      // Create a new File object with the sliced content, preserving metadata
+      const limitedFile = new File([fileSlice], file.name, {
+        type: file.type,
+        lastModified: file.lastModified,
+      })
+
+      console.log(`[v0] Uploading ${formatFileSize(limitedFile.size)} of ${formatFileSize(file.size)} (10%)`)
+
       const formData = new FormData()
-      formData.append("file", file)
+      formData.append("file", limitedFile)
+      formData.append("originalSize", file.size.toString()) // Send original size for reference
       formData.append(
         "project",
         JSON.stringify({
