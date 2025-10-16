@@ -1,6 +1,8 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { GoogleGenAI } from "@google/genai"
 
+export const maxDuration = 60 // 60 seconds timeout for LLM responses
+
 export async function POST(request: NextRequest) {
   try {
     const { message, context, chatHistory } = await request.json()

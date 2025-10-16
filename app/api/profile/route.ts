@@ -2,6 +2,8 @@ import { type NextRequest, NextResponse } from "next/server"
 import { jsonAnalyzer } from "@/lib/json-analyzer"
 import { llmService } from "@/lib/llm-service"
 
+export const maxDuration = 60 // 60 seconds for Pro plan, allows time for file upload + LLM analysis
+
 const MAX_PROFILE_BYTES = 10 * 1024 * 1024 // 10MB
 const CSV_MAX_ROWS = 1000
 const JSON_MAX_OBJS = 1000
@@ -475,7 +477,7 @@ async function profileCSV(text: string, sampleInfo: any, encoding: string) {
     } else if (sample.some((v) => /^\d{4}-\d{2}-\d{2}[\sT]\d{2}:\d{2}:\d{2}/.test(v))) {
       inferredType = "timestamp"
       timeFields.push(header)
-    } else if (sample.some((v) => /^\d{4}-\d{2}-\d{2}$|^\d{2}\/\d{2}\/\d{4}$|^\d{2}-\d{2}-\d{4}$/.test(v))) {
+    } else if (sample.some((v) => /^\d{4}-\d{2}-\d{2}$|^\d{2}\/\d{4}\/\d{2}$|^\d{2}-\d{4}\/\d{2}$/.test(v))) {
       inferredType = "date"
       timeFields.push(header)
     } else if (/^(time|date|timestamp|created|updated|modified)(_at|_on)?$/i.test(header)) {

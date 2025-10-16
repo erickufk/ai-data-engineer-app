@@ -142,27 +142,68 @@ export function FilePreviewAnalysis({ onAnalysisComplete, onBack }: FilePreviewA
         }),
       )
 
-      const response = await fetch("/api/profile", {
-        method: "POST",
-        body: formData,
-      })
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 90000) // 90 second timeout
 
-      clearInterval(progressInterval)
-      setUploadProgress(100)
+      let lastError: Error | null = null
+      const retries = 2
 
-      if (!response.ok) {
-        throw new Error(`Analysis failed: ${response.statusText}`)
+      for (let attempt = 0; attempt <= retries; attempt++) {
+        try {
+          console.log(`[v0] File analysis attempt ${attempt + 1}/${retries + 1}`)
+
+          const response = await fetch("/api/profile", {
+            method: "POST",
+            body: formData,
+            signal: controller.signal,
+            headers: {
+              Accept: "application/json",
+            },
+          })
+
+          clearTimeout(timeoutId)
+          clearInterval(progressInterval)
+          setUploadProgress(100)
+
+          if (!response.ok) {
+            const errorText = await response.text()
+            throw new Error(`Analysis failed: ${response.status} ${response.statusText} - ${errorText}`)
+          }
+
+          const result = await response.json()
+
+          if (result.deepProfile) {
+            setAnalysisResult(result)
+            console.log("[v0] File analysis completed successfully")
+            return // Success, exit the retry loop
+          } else {
+            throw new Error("Invalid analysis result format - missing deepProfile")
+          }
+        } catch (err) {
+          lastError = err instanceof Error ? err : new Error("Unknown error")
+
+          if (lastError.name === "AbortError") {
+            throw new Error(
+              "Анализ файла занял слишком много времени. Попробуйте загрузить файл меньшего размера или обратитесь в поддержку.",
+            )
+          }
+
+          if (attempt === retries) {
+            throw lastError
+          }
+
+          console.log(`[v0] Attempt ${attempt + 1} failed, retrying in ${(attempt + 1) * 2} seconds...`)
+          await new Promise((resolve) => setTimeout(resolve, (attempt + 1) * 2000))
+        }
       }
 
-      const result = await response.json()
-
-      if (result.deepProfile) {
-        setAnalysisResult(result)
-      } else {
-        throw new Error("Invalid analysis result format")
-      }
+      throw lastError || new Error("Analysis failed after multiple attempts")
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Analysis failed")
+      const errorMessage =
+        err instanceof Error
+          ? err.message
+          : "Не удалось проанализировать файл. Проверьте подключение к интернету и попробуйте снова."
+      setError(errorMessage)
       console.error("[v0] File analysis error:", err)
     } finally {
       setIsAnalyzing(false)
@@ -196,7 +237,6 @@ export function FilePreviewAnalysis({ onAnalysisComplete, onBack }: FilePreviewA
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          {/* File Upload Section */}
           {!file && (
             <div className="border-2 border-dashed border-muted-foreground/25 rounded-lg p-8 text-center">
               <Upload className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
@@ -219,7 +259,6 @@ export function FilePreviewAnalysis({ onAnalysisComplete, onBack }: FilePreviewA
             </div>
           )}
 
-          {/* File Info */}
           {file && !analysisResult && (
             <Card className="border-blue-200 dark:border-blue-800">
               <CardContent className="pt-6">
@@ -257,7 +296,6 @@ export function FilePreviewAnalysis({ onAnalysisComplete, onBack }: FilePreviewA
             </Card>
           )}
 
-          {/* Error Display */}
           {error && (
             <Alert variant="destructive">
               <AlertCircle className="h-4 w-4" />
@@ -265,7 +303,6 @@ export function FilePreviewAnalysis({ onAnalysisComplete, onBack }: FilePreviewA
             </Alert>
           )}
 
-          {/* Analysis Results */}
           {analysisResult && (
             <div className="space-y-6">
               <Card className="border-green-200 dark:border-green-800">
@@ -502,7 +539,6 @@ export function FilePreviewAnalysis({ onAnalysisComplete, onBack }: FilePreviewA
                 </CardContent>
               </Card>
 
-              {/* Action Buttons */}
               <div className="flex justify-between">
                 <Button variant="outline" onClick={onBack}>
                   Назад
