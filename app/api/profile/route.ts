@@ -94,7 +94,6 @@ export async function POST(request: NextRequest) {
       try {
         console.log("[v0] Starting enhanced LLM analysis")
 
-        // Prepare file profile for LLM analysis
         const enhancedProfile = {
           ...fileProfile,
           name: file.name,
@@ -106,15 +105,92 @@ export async function POST(request: NextRequest) {
         console.log("[v0] LLM analysis completed successfully")
 
         // Return the enhanced analysis result
-        return NextResponse.json(llmAnalysis)
+        return NextResponse.json({
+          deepProfile: llmAnalysis.deepProfile,
+          recommendation: llmAnalysis.recommendation,
+          reportMarkdown: llmAnalysis.reportMarkdown,
+          proposedSpec: llmAnalysis.proposedSpec,
+          // Include original fileProfile for backward compatibility
+          fileProfile: fileProfile,
+        })
       } catch (llmError) {
         console.error("[v0] LLM analysis failed, returning basic profile:", llmError)
-        // Fallback to basic file profile if LLM analysis fails
-        return NextResponse.json({ fileProfile })
+
+        return NextResponse.json({
+          deepProfile: {
+            format: fileProfile.format,
+            encoding: fileProfile.encoding,
+            delimiter: fileProfile.delimiter || ",",
+            headerPresent: fileProfile.headerPresent ?? true,
+            schema: {
+              fields:
+                fileProfile.columns?.map((col: string) => ({
+                  name: col,
+                  type: fileProfile.inferredTypes?.[col] || "string",
+                  nullable: true,
+                  example: "",
+                })) || [],
+              primaryKeyCandidates: fileProfile.primaryKeyCandidates || [],
+              businessKeyCandidates: [],
+              timeField: fileProfile.timeFields?.[0] || null,
+              timezone: "UTC",
+            },
+            quality: {
+              rowCountSampled: fileProfile.sampleRowsCount || 0,
+              missingShareByField: fileProfile.missingStats || {},
+              duplicatesShare: fileProfile.duplicatesShare || 0,
+              mixedTypeFields: [],
+              outlierFields: [],
+              piiFlags: [],
+            },
+            temporal: {
+              granularity: null,
+              regularity: null,
+              monotonicIncrease: false,
+            },
+            categorical: {
+              highCardinality: [],
+              lowCardinality: [],
+            },
+            sampling: {
+              sampleBytes: fileProfile.sampleInfo?.sampledBytes || 0,
+              originalSizeBytes: fileProfile.sampleInfo?.originalSize || 0,
+              schemaConfidence: fileProfile.schemaConfidence || 0.7,
+              notes: ["LLM analysis failed, using basic profile"],
+            },
+          },
+          recommendation: {
+            targetStorage: "PostgreSQL",
+            rationale: ["Базовая рекомендация без LLM анализа"],
+            ddlStrategy: {
+              partitions: { type: null, field: null, granularity: null },
+              orderBy: [],
+              indexes: [],
+            },
+            loadPolicy: {
+              mode: "append",
+              dedupKeys: [],
+              watermark: { field: null, delay: "PT0S" },
+            },
+            schedule: {
+              frequency: "daily",
+              cron: "0 2 * * *",
+              slaNote: null,
+            },
+            suggestedTransforms: [],
+          },
+          reportMarkdown: "# Базовый анализ\n\nLLM анализ недоступен. Используется базовый профиль данных.",
+          proposedSpec: null,
+          fileProfile: fileProfile,
+          error: llmError instanceof Error ? llmError.message : "LLM analysis failed",
+        })
       }
     }
 
-    return NextResponse.json({ fileProfile })
+    return NextResponse.json({
+      fileProfile,
+      error: "LLM analysis not available for this file type",
+    })
   } catch (error) {
     console.error("Profile API Error:", error)
     return NextResponse.json({ error: "Failed to profile file" }, { status: 500 })

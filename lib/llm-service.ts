@@ -67,6 +67,7 @@ export interface LLMResponse {
 export class LLMService {
   private ai: GoogleGenAI
   private maxRetries = 1 // Added retry limit for validation failures
+  private readonly API_TIMEOUT_MS = 45000 // 45 seconds
 
   constructor() {
     const apiKey = process.env.GEMINI_API_KEY
@@ -311,7 +312,6 @@ Language: Russian. If anything critical is missing, output one line starting wit
     const developerPrompt = this.getDeveloperPrompt()
     let userPrompt = this.buildUserPrompt(input)
 
-    // Add validation error context for retry attempts
     if (validationErrors.length > 0) {
       console.log("[v0] Adding validation error context for retry")
       const errorPrompt = schemaValidator.generateValidationErrorPrompt(validationErrors, [])
@@ -321,35 +321,49 @@ Language: Russian. If anything critical is missing, output one line starting wit
     console.log("[v0] Calling Gemini API with structured prompts")
 
     try {
-      const response = await this.ai.models.generateContent({
-        model: "gemini-2.0-flash-001",
-        contents: [
-          {
-            role: "user",
-            parts: [{ text: systemPrompt }],
-          },
-          {
-            role: "model",
-            parts: [
-              {
-                text: "I understand. I am AI Data Engineer — CSV Analyst, ready to analyze file samples and provide storage & ETL recommendations.",
-              },
-            ],
-          },
-          {
-            role: "user",
-            parts: [{ text: developerPrompt }],
-          },
-          {
-            role: "model",
-            parts: [{ text: "I understand the required JSON output format and will follow it exactly." }],
-          },
-          {
-            role: "user",
-            parts: [{ text: userPrompt }],
-          },
-        ],
-      })
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => {
+        console.log("[v0] API call timeout, aborting request")
+        controller.abort()
+      }, this.API_TIMEOUT_MS)
+
+      const response = await this.ai.models.generateContent(
+        {
+          model: "gemini-2.0-flash-001",
+          contents: [
+            {
+              role: "user",
+              parts: [{ text: systemPrompt }],
+            },
+            {
+              role: "model",
+              parts: [
+                {
+                  text: "I understand. I am AI Data Engineer — CSV Analyst, ready to analyze file samples and provide storage & ETL recommendations.",
+                },
+              ],
+            },
+            {
+              role: "user",
+              parts: [{ text: developerPrompt }],
+            },
+            {
+              role: "model",
+              parts: [{ text: "I understand the required JSON output format and will follow it exactly." }],
+            },
+            {
+              role: "user",
+              parts: [{ text: userPrompt }],
+            },
+          ],
+        },
+        {
+          // @ts-ignore - signal is supported but not in types
+          signal: controller.signal,
+        },
+      )
+
+      clearTimeout(timeoutId)
 
       const responseText = response.text
 
@@ -382,7 +396,11 @@ Language: Russian. If anything critical is missing, output one line starting wit
         console.error("[v0] JSON content preview:", jsonMatch[0].substring(0, 500))
         throw new Error(`Failed to parse LLM response: ${parseError}`)
       }
-    } catch (apiError) {
+    } catch (apiError: any) {
+      if (apiError.name === "AbortError") {
+        console.error("[v0] Gemini API call timed out after", this.API_TIMEOUT_MS, "ms")
+        throw new Error(`API timeout: Request exceeded ${this.API_TIMEOUT_MS / 1000} seconds`)
+      }
       console.error("[v0] Gemini API call failed:", apiError)
       throw apiError
     }
@@ -402,9 +420,114 @@ Language: Russian. If anything critical is missing, output one line starting wit
       const result = await this.callLLM(input)
       console.log("[v0] File analysis completed successfully")
       return result
-    } catch (error) {
+    } catch (error: any) {
       console.error("[v0] File analysis failed:", error)
+
+      if (error.message?.includes("timeout")) {
+        console.log("[v0] Returning fallback response due to timeout")
+        return this.createFallbackAnalysisResponse(fileProfile, projectMeta, "Analysis timed out")
+      }
+
       throw error
+    }
+  }
+
+  private createFallbackAnalysisResponse(fileProfile: any, projectMeta: any, errorReason: string): any {
+    console.log("[v0] Creating fallback analysis response")
+
+    return {
+      deepProfile: {
+        format: fileProfile.format || "csv",
+        encoding: fileProfile.encoding || "utf-8",
+        delimiter: fileProfile.delimiter || ",",
+        headerPresent: fileProfile.headerPresent ?? true,
+        schema: {
+          fields:
+            fileProfile.columns?.map((col: string) => ({
+              name: col,
+              type: fileProfile.inferredTypes?.[col] || "string",
+              nullable: true,
+              example: "",
+            })) || [],
+          primaryKeyCandidates: fileProfile.primaryKeyCandidates || [],
+          businessKeyCandidates: [],
+          timeField: fileProfile.timeFields?.[0] || null,
+          timezone: "UTC",
+        },
+        quality: {
+          rowCountSampled: fileProfile.sampleRowsCount || 0,
+          missingShareByField: fileProfile.missingStats || {},
+          duplicatesShare: fileProfile.duplicatesShare || 0,
+          mixedTypeFields: [],
+          outlierFields: [],
+          piiFlags: [],
+        },
+        temporal: {
+          granularity: null,
+          regularity: null,
+          monotonicIncrease: false,
+        },
+        categorical: {
+          highCardinality: [],
+          lowCardinality: [],
+        },
+        sampling: {
+          sampleBytes: fileProfile.sampleInfo?.sampledBytes || 0,
+          originalSizeBytes: fileProfile.sampleInfo?.originalSize || 0,
+          schemaConfidence: fileProfile.schemaConfidence || 0.7,
+          notes: [errorReason, "Используется базовый профиль без LLM анализа"],
+        },
+      },
+      recommendation: {
+        targetStorage: "PostgreSQL",
+        rationale: [
+          "Базовая рекомендация: PostgreSQL подходит для большинства операционных задач",
+          "Для точных рекомендаций требуется полный анализ данных",
+        ],
+        ddlStrategy: {
+          partitions: { type: null, field: null, granularity: null },
+          orderBy: [],
+          indexes: [],
+        },
+        loadPolicy: {
+          mode: "append",
+          dedupKeys: [],
+          watermark: { field: null, delay: "PT0S" },
+        },
+        schedule: {
+          frequency: "daily",
+          cron: "0 2 * * *",
+          slaNote: null,
+        },
+        suggestedTransforms: [],
+      },
+      reportMarkdown: `# Базовый анализ файла: ${projectMeta.name}
+
+## ⚠️ Ограничение анализа
+
+${errorReason}. Представлен базовый профиль данных без детального LLM анализа.
+
+## Обнаруженная структура
+
+- **Формат**: ${fileProfile.format || "csv"}
+- **Полей**: ${fileProfile.columns?.length || 0}
+- **Строк**: ${fileProfile.sampleRowsCount || 0}
+- **Кодировка**: ${fileProfile.encoding || "utf-8"}
+
+## Рекомендации
+
+Для получения детальных рекомендаций по хранению и обработке данных:
+1. Попробуйте повторить анализ
+2. Убедитесь в стабильности сетевого подключения
+3. Рассмотрите уменьшение размера выборки данных
+
+*Базовый отчет сгенерирован автоматически*`,
+      proposedSpec: this.createFallbackSpec({
+        projectMeta,
+        ingest: { fileProfile, mode: "file" },
+        recommendation: { storage: "PostgreSQL", loadMode: "append" },
+        pipeline: { nodes: [], edges: [] },
+      }),
     }
   }
 
