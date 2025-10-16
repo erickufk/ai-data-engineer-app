@@ -70,27 +70,27 @@ export async function POST(request: NextRequest) {
       const uint8Array = new Uint8Array(buffer, 0, sampleSize)
 
       if (uint8Array.length >= 3 && uint8Array[0] === 0xef && uint8Array[1] === 0xbb && uint8Array[2] === 0xbf) {
+        // UTF-8 BOM detected
         detectedEncoding = "utf-8-bom"
         text = new TextDecoder("utf-8").decode(uint8Array.slice(3))
       } else if (uint8Array.length >= 2 && uint8Array[0] === 0xff && uint8Array[1] === 0xfe) {
+        // UTF-16 LE BOM detected
         detectedEncoding = "utf-16le"
         text = new TextDecoder("utf-16le").decode(uint8Array.slice(2))
       } else if (uint8Array.length >= 2 && uint8Array[0] === 0xfe && uint8Array[1] === 0xff) {
+        // UTF-16 BE BOM detected
         detectedEncoding = "utf-16be"
         text = new TextDecoder("utf-16be").decode(uint8Array.slice(2))
       } else {
-        try {
-          text = new TextDecoder("utf-8", { fatal: true }).decode(uint8Array)
-          detectedEncoding = "utf-8"
-        } catch {
-          text = new TextDecoder("latin1").decode(uint8Array)
-          detectedEncoding = "latin1"
-        }
+        text = new TextDecoder("utf-8").decode(uint8Array)
+        detectedEncoding = "utf-8"
       }
     } catch (error) {
+      console.log("[v0] Binary reading failed, using text() method with UTF-8")
       const fullText = await file.text()
       const sampleLength = Math.ceil(fullText.length * FILE_SAMPLE_PERCENT)
       text = fullText.substring(0, sampleLength)
+      detectedEncoding = "utf-8"
       console.log(`[v0] Fallback text reading: ${fullText.length} chars, sampling: ${sampleLength} chars`)
     }
 

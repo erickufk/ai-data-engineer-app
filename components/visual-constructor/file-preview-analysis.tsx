@@ -142,7 +142,7 @@ export function FilePreviewAnalysis({ onAnalysisComplete, onBack }: FilePreviewA
         const reader = new FileReader()
         reader.onload = (e) => resolve(e.target?.result as string)
         reader.onerror = () => reject(new Error("Failed to read file"))
-        reader.readAsText(fileSlice)
+        reader.readAsText(fileSlice, "UTF-8") // Explicitly specify UTF-8 encoding
       })
 
       console.log(`[v0] File read successfully: ${text.length} characters`)
@@ -160,8 +160,8 @@ export function FilePreviewAnalysis({ onAnalysisComplete, onBack }: FilePreviewA
 
       if (fileType.includes("csv") || file.name.endsWith(".csv")) {
         const lines = text.split("\n")
-        sampleText = lines.slice(0, 1000).join("\n")
-        console.log(`[v0] Extracted ${lines.slice(0, 1000).length} CSV lines`)
+        sampleText = lines.slice(0, 2000).join("\n") // Increased from 1000 to 2000 rows for CSV analysis
+        console.log(`[v0] Extracted ${lines.slice(0, 2000).length} CSV lines`)
       } else if (
         fileType.includes("json") ||
         file.name.endsWith(".json") ||
@@ -171,13 +171,13 @@ export function FilePreviewAnalysis({ onAnalysisComplete, onBack }: FilePreviewA
         try {
           if (file.name.endsWith(".jsonl") || file.name.endsWith(".ndjson")) {
             const lines = text.split("\n").filter((line) => line.trim())
-            sampleText = lines.slice(0, 1000).join("\n")
-            console.log(`[v0] Extracted ${lines.slice(0, 1000).length} NDJSON objects`)
+            sampleText = lines.slice(0, 2000).join("\n") // Increased from 1000 to 2000 objects for NDJSON analysis
+            console.log(`[v0] Extracted ${lines.slice(0, 2000).length} NDJSON objects`)
           } else {
             const parsed = JSON.parse(text)
             if (Array.isArray(parsed)) {
-              sampleText = JSON.stringify(parsed.slice(0, 1000))
-              console.log(`[v0] Extracted ${Math.min(parsed.length, 1000)} JSON objects`)
+              sampleText = JSON.stringify(parsed.slice(0, 2000)) // Increased from 1000 to 2000 objects for JSON array analysis
+              console.log(`[v0] Extracted ${Math.min(parsed.length, 2000)} JSON objects`)
             } else {
               sampleText = JSON.stringify(parsed)
               console.log(`[v0] Using full JSON object`)
@@ -201,7 +201,7 @@ export function FilePreviewAnalysis({ onAnalysisComplete, onBack }: FilePreviewA
       console.log(`[v0] Sending ${formatFileSize(sampleText.length)} of text data for analysis`)
 
       const formData = new FormData()
-      const textBlob = new Blob([sampleText], { type: "text/plain" })
+      const textBlob = new Blob([sampleText], { type: "text/plain;charset=utf-8" })
       const sampleFile = new File([textBlob], file.name, {
         type: fileType,
         lastModified: file.lastModified,
