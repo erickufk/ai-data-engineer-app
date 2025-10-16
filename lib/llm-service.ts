@@ -305,6 +305,24 @@ Produce a consistent "pipelineSpec" and "reportMarkdown" and list "artifacts" pe
 Language: Russian. If anything critical is missing, output one line starting with "CLARIFY:" and proceed with best assumptions.`
   }
 
+  private cleanJsonResponse(jsonString: string): string {
+    console.log("[v0] Cleaning JSON response before parsing")
+
+    let cleaned = jsonString
+
+    // Fix common escape sequence issues
+    // Replace invalid escape sequences with valid ones
+    cleaned = cleaned
+      // Fix backslash followed by invalid characters
+      .replace(/\\([^"\\/bfnrtu])/g, "\\\\$1")
+      // Remove control characters (except valid JSON whitespace)
+      .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "")
+      // Fix unescaped quotes in strings (basic heuristic)
+      .replace(/([^\\])"([^"]*[^\\])"([^,}\]])/g, '$1\\"$2\\"$3')
+
+    return cleaned
+  }
+
   private async callLLM(input: any, validationErrors: string[] = []): Promise<any> {
     console.log("[v0] Preparing LLM prompts with three-prompt structure")
 
@@ -380,7 +398,8 @@ Language: Russian. If anything critical is missing, output one line starting wit
       console.log("[v0] JSON found in response, parsing...")
 
       try {
-        const parsed = JSON.parse(jsonMatch[0])
+        const cleanedJson = this.cleanJsonResponse(jsonMatch[0])
+        const parsed = JSON.parse(cleanedJson)
 
         if (!parsed.deepProfile || !parsed.recommendation || !parsed.reportMarkdown || !parsed.proposedSpec) {
           console.error("[v0] Missing required fields in parsed response")
@@ -392,9 +411,28 @@ Language: Russian. If anything critical is missing, output one line starting wit
 
         return parsed
       } catch (parseError) {
-        console.error("[v0] JSON parsing failed:", parseError)
-        console.error("[v0] JSON content preview:", jsonMatch[0].substring(0, 500))
-        throw new Error(`Failed to parse LLM response: ${parseError}`)
+        console.log("[v0] Primary JSON parser failed, trying alternative method...")
+        console.log("[v0] Parse error details:", parseError)
+
+        try {
+          console.log("[v0] Attempting alternative JSON parsing with aggressive sanitization")
+          // Remove all control characters and try again
+          const sanitized = jsonMatch[0].replace(/[\x00-\x1F\x7F]/g, "")
+          const parsed = JSON.parse(sanitized)
+
+          if (!parsed.deepProfile || !parsed.recommendation || !parsed.reportMarkdown || !parsed.proposedSpec) {
+            throw new Error("Missing required fields in LLM response")
+          }
+
+          console.log("[v0] Alternative parsing succeeded ✓")
+          return parsed
+        } catch (altError) {
+          console.error("[v0] All JSON parsing methods failed")
+          console.error("[v0] Primary error:", parseError)
+          console.error("[v0] Alternative error:", altError)
+          console.error("[v0] JSON preview:", jsonMatch[0].substring(0, 500))
+          throw new Error(`Failed to parse LLM response: ${parseError}`)
+        }
       }
     } catch (apiError: any) {
       if (apiError.name === "AbortError") {

@@ -132,20 +132,83 @@ export function FilePreviewAnalysis({ onAnalysisComplete, onBack }: FilePreviewA
         })
       }, 200)
 
-      const maxUploadSize = Math.ceil(file.size * 0.1) // 10% of file size
-      const fileSlice = file.slice(0, maxUploadSize)
+      console.log(`[v0] Reading file on client: ${file.name} (${formatFileSize(file.size)})`)
 
-      // Create a new File object with the sliced content, preserving metadata
-      const limitedFile = new File([fileSlice], file.name, {
-        type: file.type,
+      const MAX_READ_SIZE = 10 * 1024 * 1024
+      const readSize = Math.min(file.size, MAX_READ_SIZE)
+      const fileSlice = file.slice(0, readSize)
+
+      const text = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = (e) => resolve(e.target?.result as string)
+        reader.onerror = () => reject(new Error("Failed to read file"))
+        reader.readAsText(fileSlice)
+      })
+
+      console.log(`[v0] File read successfully: ${text.length} characters`)
+
+      let sampleText = ""
+      const fileType =
+        file.type ||
+        (file.name.endsWith(".csv")
+          ? "text/csv"
+          : file.name.endsWith(".json")
+            ? "application/json"
+            : file.name.endsWith(".xml")
+              ? "application/xml"
+              : "text/plain")
+
+      if (fileType.includes("csv") || file.name.endsWith(".csv")) {
+        const lines = text.split("\n")
+        sampleText = lines.slice(0, 1000).join("\n")
+        console.log(`[v0] Extracted ${lines.slice(0, 1000).length} CSV lines`)
+      } else if (
+        fileType.includes("json") ||
+        file.name.endsWith(".json") ||
+        file.name.endsWith(".jsonl") ||
+        file.name.endsWith(".ndjson")
+      ) {
+        try {
+          if (file.name.endsWith(".jsonl") || file.name.endsWith(".ndjson")) {
+            const lines = text.split("\n").filter((line) => line.trim())
+            sampleText = lines.slice(0, 1000).join("\n")
+            console.log(`[v0] Extracted ${lines.slice(0, 1000).length} NDJSON objects`)
+          } else {
+            const parsed = JSON.parse(text)
+            if (Array.isArray(parsed)) {
+              sampleText = JSON.stringify(parsed.slice(0, 1000))
+              console.log(`[v0] Extracted ${Math.min(parsed.length, 1000)} JSON objects`)
+            } else {
+              sampleText = JSON.stringify(parsed)
+              console.log(`[v0] Using full JSON object`)
+            }
+          }
+        } catch (e) {
+          sampleText = text.substring(0, 100000)
+          console.log(`[v0] JSON parsing failed, using raw text (${sampleText.length} chars)`)
+        }
+      } else {
+        sampleText = text.substring(0, 100000)
+        console.log(`[v0] Using first 100KB of text`)
+      }
+
+      const MAX_SAMPLE_SIZE = 500 * 1024
+      if (sampleText.length > MAX_SAMPLE_SIZE) {
+        sampleText = sampleText.substring(0, MAX_SAMPLE_SIZE)
+        console.log(`[v0] Truncated sample to ${formatFileSize(MAX_SAMPLE_SIZE)}`)
+      }
+
+      console.log(`[v0] Sending ${formatFileSize(sampleText.length)} of text data for analysis`)
+
+      const formData = new FormData()
+      const textBlob = new Blob([sampleText], { type: "text/plain" })
+      const sampleFile = new File([textBlob], file.name, {
+        type: fileType,
         lastModified: file.lastModified,
       })
 
-      console.log(`[v0] Uploading ${formatFileSize(limitedFile.size)} of ${formatFileSize(file.size)} (10%)`)
-
-      const formData = new FormData()
-      formData.append("file", limitedFile)
-      formData.append("originalSize", file.size.toString()) // Send original size for reference
+      formData.append("file", sampleFile)
+      formData.append("originalSize", file.size.toString())
       formData.append(
         "project",
         JSON.stringify({
@@ -155,7 +218,7 @@ export function FilePreviewAnalysis({ onAnalysisComplete, onBack }: FilePreviewA
       )
 
       const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), 90000) // 90 second timeout
+      const timeoutId = setTimeout(() => controller.abort(), 90000)
 
       let lastError: Error | null = null
       const retries = 2
@@ -187,7 +250,7 @@ export function FilePreviewAnalysis({ onAnalysisComplete, onBack }: FilePreviewA
           if (result.deepProfile) {
             setAnalysisResult(result)
             console.log("[v0] File analysis completed successfully")
-            return // Success, exit the retry loop
+            return
           } else {
             throw new Error("Invalid analysis result format - missing deepProfile")
           }
