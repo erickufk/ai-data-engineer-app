@@ -457,6 +457,15 @@ Language: Russian. If anything critical is missing, output one line starting wit
     try {
       const result = await this.callLLM(input)
       console.log("[v0] File analysis completed successfully")
+
+      if (result.deepProfile && result.deepProfile.quality) {
+        const actualRowCount = fileProfile.sampleRowsCount || 0
+        if (!result.deepProfile.quality.rowCountSampled || result.deepProfile.quality.rowCountSampled === 0) {
+          console.log(`[v0] Populating rowCountSampled with actual value: ${actualRowCount}`)
+          result.deepProfile.quality.rowCountSampled = actualRowCount
+        }
+      }
+
       return result
     } catch (error: any) {
       console.error("[v0] File analysis failed:", error)
