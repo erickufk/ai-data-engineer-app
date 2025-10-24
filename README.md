@@ -5,6 +5,7 @@
 [![Next.js](https://img.shields.io/badge/Next.js-14-black?style=for-the-badge&logo=next.js)](https://nextjs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-blue?style=for-the-badge&logo=typescript)](https://www.typescriptlang.org/)
 
+Демо видео https://youtu.be/m3G6qj2mIEs
 **Автоматическая генерация пайплайнов обработки данных с помощью искусственного интеллекта**
 
 AI Data Engineer — это интеллектуальная платформа для автоматизации создания ETL/ELT пайплайнов. Приложение анализирует ваши данные, предлагает оптимальные решения для хранения и генерирует готовый к развертыванию код с полной документацией.
